@@ -23,6 +23,11 @@
         </div>
       </div>
 
+      <div class="sidebar-section-label">Switch Lab</div>
+      <div class="lab-select-wrap">
+        <select id="sidebarLabSelect" class="lab-select" onchange="selectHomeLab(this.value)"></select>
+      </div>
+
       <nav class="side-nav">
         <button data-tab="home" onclick="switchTab('home')"><span class="ic">🏠</span>Home &amp; Dashboard</button>
         <button data-tab="add" onclick="switchTab('add')"><span class="ic">➕</span>Add Inventory</button>
@@ -55,14 +60,43 @@
           <button class="hamburger" onclick="openSidebar()">☰</button>
           <div class="topbar-title" id="topbarTitle">Home &amp; Dashboard</div>
         </div>
+
+        <div class="atl-labs-menu" id="atlLabsMenu">
+          <button class="atl-labs-btn" onclick="toggleAtlLabsMenu(event)">
+            ATL Labs <span class="chevron">▾</span>
+          </button>
+          <div class="atl-labs-dropdown">
+            <button onclick="switchTab('addlab')">➕ Add NEW Lab</button>
+            <button onclick="switchTab('listlabs')">📋 List of ATLs</button>
+          </div>
+        </div>
       </header>
 
       <main>
         <!-- HOME = DASHBOARD -->
         <section id="tab-home">
-          <div id="dashboardOverview">
-            <h2 class="view-title">Home &amp; Dashboard</h2>
-            <p class="view-sub">Tap a package to see items available, grouped by category.</p>
+          <h2 class="view-title">Home &amp; Dashboard</h2>
+          <p class="view-sub">Pick a lab to see its inventory, grouped by package and category.</p>
+
+          <div class="card lab-picker-card">
+            <div class="field" style="margin-bottom:0;">
+              <label>Lab</label>
+              <select id="homeLabSelect" class="home-lab-select" onchange="selectHomeLab(this.value)"></select>
+            </div>
+          </div>
+
+          <div id="noLabState" class="card empty-state">
+            <div class="eicon">🏫</div>
+            <h4>No lab selected</h4>
+            <p>Choose a lab above — or add a new one from the "ATL Labs" menu, top right — to see its inventory dashboard.</p>
+          </div>
+
+          <div id="labHeadingWrap" class="lab-heading-wrap hidden">
+            <h3 class="lab-heading-title" id="labHeadingTitle"></h3>
+            <p class="lab-heading-sub" id="labHeadingSub"></p>
+          </div>
+
+          <div id="dashboardOverview" class="hidden">
             <div class="pkg-grid" id="dashPkgGrid"></div>
           </div>
           <div id="dashboardDetail" class="hidden">
@@ -82,7 +116,13 @@
           <h2 class="view-title">Add Inventory</h2>
           <p class="view-sub">Enter items by hand — they'll be automatically categorized against the official ATL equipment list.</p>
 
-          <div id="manualPane" class="card">
+          <div id="addInventoryGate" class="card empty-state">
+            <div class="eicon">🏫</div>
+            <h4>No lab selected</h4>
+            <p>Select a lab from the Home &amp; Dashboard tab before adding inventory.</p>
+          </div>
+
+          <div id="manualPane" class="card hidden">
             <div class="form-row">
               <div class="field">
                 <label>Item Name</label>
@@ -97,6 +137,32 @@
             </div>
             <div id="manualStatus"></div>
           </div>
+        </section>
+
+        <!-- ADD NEW LAB -->
+        <section id="tab-addlab" class="hidden">
+          <h2 class="view-title">Add New Lab</h2>
+          <p class="view-sub">Create a new ATL lab. It's shared with everyone using this app and shows up right away in every lab list.</p>
+
+          <div class="card" style="max-width:460px;">
+            <div class="field">
+              <label>School Name</label>
+              <input type="text" id="newLabSchool" placeholder="e.g. Sunrise Public School" autocomplete="off">
+            </div>
+            <div class="field">
+              <label>City</label>
+              <input type="text" id="newLabCity" placeholder="e.g. Vijayawada" autocomplete="off">
+            </div>
+            <button class="btn btn-amber" onclick="submitNewLab()">+ Add Lab</button>
+          </div>
+        </section>
+
+        <!-- LIST OF ATLs -->
+        <section id="tab-listlabs" class="hidden">
+          <h2 class="view-title">List of ATLs</h2>
+          <p class="view-sub">All labs added to this app. Edit details or delete a lab below.</p>
+
+          <div id="labManageList" class="lab-page-list"></div>
         </section>
       </main>
     </div>
