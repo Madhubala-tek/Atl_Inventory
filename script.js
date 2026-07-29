@@ -298,6 +298,223 @@ async function storageSet(key, value, shared){
 let inventory=[];
 
 /* =========================================================
+   LABS — the list of labs itself is persisted in Firestore
+   (single document, atl_data/lab_list) so it's shared across
+   everyone using the app. Each lab's inventory still lives in
+   its own Firestore document ('atl_inventory_<LabId>'), so
+   switching labs just means unsubscribing from the old
+   inventory doc and subscribing to the new one.
+========================================================= */
+const LAB_LIST_KEY = 'lab_list';
+let LABS = [];
+let currentLab = localStorage.getItem('selectedLab') || null;
+
+function inventoryKeyFor(labId){ return 'atl_inventory_' + labId; }
+function newLabId(){ return 'lab_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,7); }
+function labById(labId){ return LABS.find(l=>l.id===labId) || null; }
+
+let unsubscribeInventory = null;
+function stopListeningToInventory(){
+  if(unsubscribeInventory){ unsubscribeInventory(); unsubscribeInventory = null; }
+  inventory = [];
+}
+function listenToLabInventory(labId){
+  stopListeningToInventory();
+  unsubscribeInventory = db.collection('atl_data').doc(inventoryKeyFor(labId)).onSnapshot(doc=>{
+    inventory = doc.exists ? (doc.data().value || []) : [];
+    renderPackageGrids();
+    if(!document.getElementById('dashboardDetail').classList.contains('hidden')){
+      const code = document.getElementById('detailPkgLabel').textContent;
+      if(code) openPackageDetail(code);
+    }
+  }, err=>{
+    console.error("Firestore listener failed", err);
+    showToast('Could not connect to the database');
+  });
+}
+
+let unsubscribeLabs = null;
+function listenToLabs(){
+  if(unsubscribeLabs){ unsubscribeLabs(); unsubscribeLabs = null; }
+  unsubscribeLabs = db.collection('atl_data').doc(LAB_LIST_KEY).onSnapshot(doc=>{
+    LABS = doc.exists ? (doc.data().value || []) : [];
+    if(currentLab && !labById(currentLab)){
+      currentLab = null;
+      localStorage.removeItem('selectedLab');
+      stopListeningToInventory();
+    }
+    renderLabManageList();
+    renderAllLabSelects();
+    renderHomeLabState();
+    renderAddInventoryGate();
+    updateTopbarTitle();
+  }, err=>{
+    console.error("Firestore labs listener failed", err);
+    showToast('Could not load labs');
+  });
+}
+
+async function saveLabs(){
+  await storageSet(LAB_LIST_KEY, LABS, true);
+}
+
+function submitNewLab(){
+  const nameEl = document.getElementById('newLabSchool');
+  const cityEl = document.getElementById('newLabCity');
+  const schoolName = nameEl.value.trim();
+  const city = cityEl.value.trim();
+  if(!schoolName || !city){ showToast('Enter both a school name and a city'); return; }
+  LABS.push({ id:newLabId(), schoolName, city });
+  saveLabs();
+  nameEl.value=''; cityEl.value='';
+  showToast('Lab added');
+}
+
+function startEditLab(labId){
+  const lab = labById(labId);
+  const row = document.getElementById('labRow_'+labId);
+  if(!lab || !row) return;
+  row.outerHTML = `
+    <div class="lab-page-card lab-page-card-edit" id="labRow_${labId}">
+      <div class="form-row" style="flex:1; min-width:220px;">
+        <div class="field"><label>School Name</label><input type="text" id="editSchool_${labId}" value="${escapeHTML(lab.schoolName)}" placeholder="School Name"></div>
+        <div class="field"><label>City</label><input type="text" id="editCity_${labId}" value="${escapeHTML(lab.city)}" placeholder="City"></div>
+      </div>
+      <div class="lab-page-actions">
+        <a class="view" href="javascript:void(0)" onclick="saveEditLab('${labId}')">Save</a>
+        <a class="download" href="javascript:void(0)" onclick="renderLabManageList()">Cancel</a>
+      </div>
+    </div>`;
+}
+
+function saveEditLab(labId){
+  const lab = labById(labId);
+  if(!lab) return;
+  const schoolName = document.getElementById('editSchool_'+labId).value.trim();
+  const city = document.getElementById('editCity_'+labId).value.trim();
+  if(!schoolName || !city){ showToast('Enter both a school name and a city'); return; }
+  lab.schoolName = schoolName;
+  lab.city = city;
+  saveLabs();
+  showToast('Lab updated');
+}
+
+function deleteLab(labId){
+  const lab = labById(labId);
+  if(!lab) return;
+  if(!confirm(`Delete "${lab.schoolName} — ${lab.city}"? Its saved inventory data is not deleted.`)) return;
+  LABS = LABS.filter(l=>l.id!==labId);
+  saveLabs();
+  if(currentLab===labId){
+    currentLab = null;
+    localStorage.removeItem('selectedLab');
+    stopListeningToInventory();
+    renderAllLabSelects();
+    renderHomeLabState();
+    renderAddInventoryGate();
+    updateTopbarTitle();
+  }
+  showToast('Lab deleted');
+}
+
+function renderLabManageList(){
+  const wrap = document.getElementById('labManageList');
+  if(!wrap) return;
+  if(LABS.length===0){
+    wrap.innerHTML = `<div class="lab-page-empty">No labs added yet — use "Add NEW Lab" from the ATL Labs menu above.</div>`;
+    return;
+  }
+  wrap.innerHTML = LABS.map(l=>`
+    <div class="lab-page-card" id="labRow_${l.id}">
+      <div>
+        <div class="lname">${escapeHTML(l.schoolName)}</div>
+        <div class="lcity">${escapeHTML(l.city)}</div>
+      </div>
+      <div class="lab-page-actions">
+        <a class="view" href="javascript:void(0)" onclick="startEditLab('${l.id}')">Edit</a>
+        <a class="download" href="javascript:void(0)" onclick="deleteLab('${l.id}')">Delete</a>
+      </div>
+    </div>`).join('');
+}
+
+/* ---------- Lab pickers: Home tab dropdown + sidebar "Switch Lab" dropdown ---------- */
+function fillLabSelect(sel){
+  if(!sel) return;
+  if(LABS.length===0){
+    sel.innerHTML = `<option value="">No labs added yet</option>`;
+    sel.value = '';
+    return;
+  }
+  sel.innerHTML = `<option value="">Select a lab…</option>` +
+    LABS.map(l=>`<option value="${escapeHTML(l.id)}" ${l.id===currentLab?'selected':''}>${escapeHTML(l.schoolName)} — ${escapeHTML(l.city)}</option>`).join('');
+  sel.value = currentLab || '';
+}
+function renderHomeLabSelect(){
+  fillLabSelect(document.getElementById('homeLabSelect'));
+}
+function renderSidebarLabSelect(){
+  fillLabSelect(document.getElementById('sidebarLabSelect'));
+}
+function renderAllLabSelects(){
+  renderHomeLabSelect();
+  renderSidebarLabSelect();
+}
+
+function renderHomeLabState(){
+  const lab = currentLab ? labById(currentLab) : null;
+  const noLabState = document.getElementById('noLabState');
+  const headingWrap = document.getElementById('labHeadingWrap');
+  const overview = document.getElementById('dashboardOverview');
+  const detail = document.getElementById('dashboardDetail');
+  if(!noLabState) return;
+
+  if(!lab){
+    noLabState.classList.remove('hidden');
+    headingWrap.classList.add('hidden');
+    overview.classList.add('hidden');
+    detail.classList.add('hidden');
+    return;
+  }
+  noLabState.classList.add('hidden');
+  headingWrap.classList.remove('hidden');
+  document.getElementById('labHeadingTitle').textContent = lab.schoolName;
+  document.getElementById('labHeadingSub').textContent = lab.city;
+  showDashboardOverview();
+}
+
+function renderAddInventoryGate(){
+  const gate = document.getElementById('addInventoryGate');
+  const pane = document.getElementById('manualPane');
+  if(!gate || !pane) return;
+  const hasLab = !!currentLab;
+  gate.classList.toggle('hidden', hasLab);
+  pane.classList.toggle('hidden', !hasLab);
+}
+
+function selectHomeLab(labId){
+  if(!labId){
+    currentLab = null;
+    localStorage.removeItem('selectedLab');
+    stopListeningToInventory();
+    renderAllLabSelects();
+    renderHomeLabState();
+    renderAddInventoryGate();
+    updateTopbarTitle();
+    return;
+  }
+  const lab = labById(labId);
+  if(!lab) return;
+  currentLab = labId;
+  localStorage.setItem('selectedLab', currentLab);
+  listenToLabInventory(currentLab);
+  renderAllLabSelects();
+  renderHomeLabState();
+  renderAddInventoryGate();
+  updateTopbarTitle();
+  showToast('Switched to ' + lab.schoolName);
+}
+
+/* =========================================================
    INIT — no authentication gate; the app loads straight into
    the Home & Dashboard view. Inventory is kept live via a
    Firestore onSnapshot listener, so changes made by anyone
@@ -310,14 +527,17 @@ async function init(){
   document.getElementById('pdf90Dl').href = PDF90_DATA;
 
   populateItemSuggestions();
+  LABS = (await storageGet(LAB_LIST_KEY, true)) || [];
 
-  db.collection('atl_data').doc('atl_inventory').onSnapshot(doc=>{
-    inventory = doc.exists ? (doc.data().value || []) : [];
-    renderPackageGrids();
-  }, err=>{
-    console.error("Firestore listener failed", err);
-    showToast('Could not connect to the database');
-  });
+  // One-time cleanup: drop the old demo labs if they're still present.
+ 
+
+  if(currentLab && !labById(currentLab)){
+    currentLab = null;
+    localStorage.removeItem('selectedLab');
+  }
+  if(currentLab){ listenToLabInventory(currentLab); }
+  listenToLabs();
 
   switchTab('home');
 }
@@ -325,16 +545,42 @@ async function init(){
 /* =========================================================
    NAV
 ========================================================= */
-const TAB_TITLES = { home:"Home & Dashboard", add:"Add Inventory" };
+const TAB_TITLES = { home:"Home & Dashboard", add:"Add Inventory", addlab:"Add New Lab", listlabs:"List of ATLs" };
+const ALL_TABS = ['home','add','addlab','listlabs'];
+let activeTab = 'home';
+function updateTopbarTitle(){
+  const lab = currentLab ? labById(currentLab) : null;
+  const labLabel = lab ? (lab.schoolName + ' — ' + lab.city) : 'No lab selected';
+  document.getElementById('topbarTitle').textContent = (TAB_TITLES[activeTab] || '') + ' — ' + labLabel;
+}
 function switchTab(tab){
+  activeTab = tab;
   document.querySelectorAll('.side-nav button').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
-  ['home','add'].forEach(t=>{
+  ALL_TABS.forEach(t=>{
     document.getElementById('tab-'+t).classList.toggle('hidden', t!==tab);
   });
-  document.getElementById('topbarTitle').textContent = TAB_TITLES[tab] || '';
-  if(tab==='home'){ showDashboardOverview(); }
+  updateTopbarTitle();
+  if(tab==='home'){ renderAllLabSelects(); renderHomeLabState(); }
+  if(tab==='add'){ renderAddInventoryGate(); }
+  if(tab==='listlabs'){ renderLabManageList(); }
   closeSidebar();
+  closeAtlLabsMenu();
 }
+
+/* ---------- ATL Labs top-right hover menu ---------- */
+function toggleAtlLabsMenu(e){
+  if(e) e.stopPropagation();
+  const menu = document.getElementById('atlLabsMenu');
+  if(menu) menu.classList.toggle('open');
+}
+function closeAtlLabsMenu(){
+  const menu = document.getElementById('atlLabsMenu');
+  if(menu) menu.classList.remove('open');
+}
+document.addEventListener('click', function(e){
+  const menu = document.getElementById('atlLabsMenu');
+  if(menu && !menu.contains(e.target)) closeAtlLabsMenu();
+});
 function openSidebar(){
   document.getElementById('sidebar').classList.add('open');
   document.getElementById('sidebarBackdrop').classList.add('open');
@@ -504,6 +750,7 @@ function setStatus(elId, type, msg){
 }
 
 async function submitManualItem(){
+  if(!currentLab){ setStatus('manualStatus','error','Select a lab from Home & Dashboard first.'); return; }
   const nameEl = document.getElementById('manualItemName');
   const qtyEl = document.getElementById('manualItemQty');
   const name = nameEl.value.trim();
@@ -526,7 +773,7 @@ async function submitManualItem(){
     id: 'it_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
     name, quantity: qty, category, package: pkg, source:'manual', dateAdded: new Date().toISOString()
   });
-  await storageSet('atl_inventory', inventory, true);
+  await storageSet(inventoryKeyFor(currentLab), inventory, true);
   renderPackageGrids();
   setStatus('manualStatus','success', `Added "${name}" (x${qty}) → ${category} (${pkg})`);
   nameEl.value=''; qtyEl.value=1;
