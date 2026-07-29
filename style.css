@@ -115,6 +115,17 @@
   .sidebar-brand .txt .t1{font-family:'Space Grotesk'; font-weight:700; font-size:14.5px; line-height:1.2;}
   .sidebar-brand .txt .t2{font-size:10.5px; color:#93A8C4; font-family:'IBM Plex Mono'; letter-spacing:.04em;}
 
+  .lab-select-wrap{margin-bottom:20px;}
+  .lab-select{
+    width:100%; padding:10px 12px; border-radius:9px; border:1.5px solid rgba(255,255,255,0.16);
+    background:rgba(255,255,255,0.06); color:#fff; font-size:13.5px; font-weight:600;
+    font-family:inherit; appearance:none; -webkit-appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23C6D3E5'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 10px center; background-size:18px;
+  }
+  .lab-select:focus{outline:none; border-color:var(--amber);}
+  .lab-select option{background:var(--blueprint-deep); color:#fff;}
+
   .side-nav{display:flex; flex-direction:column; gap:3px; margin-bottom:26px;}
   .side-nav button{
     display:flex; align-items:center; gap:10px; text-align:left; background:transparent; border:none;
@@ -143,6 +154,34 @@
   .side-pdf-actions a.view:hover{filter:brightness(1.05);}
 
   .sidebar-footer{margin-top:auto; padding-top:18px; font-size:10.5px; color:#5E7396; line-height:1.5;}
+
+  /* ---------- Lab management (sidebar) ---------- */
+  .lab-manage-list{display:flex; flex-direction:column; gap:10px; margin-bottom:16px;}
+  .lab-manage-list .lab-empty{font-size:12px; color:#8FA1BC; padding:2px 6px;}
+  .lab-card .lname{font-size:12.5px; font-weight:600; line-height:1.4; color:#EAF0F8;}
+  .lab-card .lcity{font-size:11px; color:#93A8C4; margin-bottom:9px;}
+  .lab-add-card{margin-bottom:22px;}
+  .lab-add-card .pname{margin-bottom:12px;}
+  .lab-add-card .field{margin-bottom:9px;}
+  .side-input{
+    width:100%; padding:9px 10px; border-radius:8px; border:1.5px solid rgba(255,255,255,0.16);
+    background:rgba(255,255,255,0.06); color:#fff; font-size:13px; font-family:inherit;
+  }
+  .side-input::placeholder{color:rgba(255,255,255,.42);}
+  .side-input:focus{outline:none; border-color:var(--amber);}
+
+  /* ---------- Home lab picker ---------- */
+  .lab-picker-card{margin-bottom:18px;}
+  .home-lab-select{
+    width:100%; padding:11px 13px; border:1.5px solid var(--border); border-radius:9px;
+    font-family:inherit; font-size:14px; background:#fff; color:var(--ink); appearance:none; -webkit-appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%235C6B80'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 13px center; background-size:18px;
+  }
+  .home-lab-select:focus{outline:none; border-color:var(--blueprint);}
+  .lab-heading-wrap{margin-bottom:18px;}
+  .lab-heading-title{font-family:'Space Grotesk'; font-size:19px; margin-bottom:2px; color:var(--ink);}
+  .lab-heading-sub{font-size:13.5px; color:var(--muted);}
 
   .app-main{flex:1; min-width:0; display:flex; flex-direction:column;}
 
@@ -186,6 +225,46 @@
   .pop-meta div b{display:block; font-size:10.5px; text-transform:uppercase; letter-spacing:.03em; color:var(--muted); font-weight:700; margin-bottom:1px;}
   .pop-meta div span{color:var(--ink);}
   .pop-actions{display:flex; flex-direction:column; gap:8px;}
+
+  /* ---------- ATL Labs top-right menu ---------- */
+  .atl-labs-menu{position:relative;}
+  .atl-labs-btn{
+    display:flex; align-items:center; gap:6px; background:#fff; border:1.5px solid var(--border); border-radius:10px;
+    padding:9px 14px; font-weight:600; font-size:13.5px; color:var(--blueprint);
+  }
+  .atl-labs-btn:hover{border-color:var(--blueprint);}
+  .atl-labs-dropdown{
+    display:none; flex-direction:column; gap:2px;
+    position:absolute; top:calc(100% + 8px); right:0; min-width:190px; background:#fff;
+    border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow); padding:8px; z-index:80;
+  }
+  .atl-labs-menu:hover .atl-labs-dropdown,
+  .atl-labs-menu.open .atl-labs-dropdown{display:flex;}
+  .atl-labs-dropdown button{
+    display:flex; align-items:center; gap:8px; text-align:left; background:none; border:none; padding:10px 11px;
+    border-radius:8px; font-size:13.5px; font-weight:600; color:var(--ink); width:100%;
+  }
+  .atl-labs-dropdown button:hover{background:#F0F5FB; color:var(--blueprint);}
+
+  /* ---------- Lab list / edit cards (Add New Lab & List of ATLs pages) ---------- */
+  .lab-page-list{display:flex; flex-direction:column; gap:12px; max-width:640px;}
+  .lab-page-card{
+    background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow);
+    padding:16px 18px; display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;
+  }
+  .lab-page-card .lname{font-weight:700; font-size:15px; color:var(--ink);}
+  .lab-page-card .lcity{font-size:13px; color:var(--muted); margin-top:2px;}
+  .lab-page-card-edit{align-items:flex-end;}
+  .lab-page-card-edit .form-row{margin-bottom:0;}
+  .lab-page-actions{display:flex; gap:8px; flex-shrink:0;}
+  .lab-page-actions a{
+    font-size:12.5px; font-weight:700; text-decoration:none; padding:8px 14px; border-radius:8px;
+  }
+  .lab-page-actions a.view{background:var(--amber); color:var(--blueprint-deep);}
+  .lab-page-actions a.download{background:#FBEAE8; color:var(--red);}
+  .lab-page-actions a.view:hover{filter:brightness(1.05);}
+  .lab-page-actions a.download:hover{background:#F6D8D4;}
+  .lab-page-empty{color:var(--muted); font-size:14px; padding:6px 0 20px;}
 
   main{flex:1; padding:26px 26px 60px;}
   .view-title{margin-bottom:4px; font-size:23px;}
