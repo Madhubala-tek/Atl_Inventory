@@ -333,6 +333,33 @@ function listenToLabInventory(labId){
   });
 }
 
+/* =========================================================
+   ORDERS — request list for a lab, persisted in its own
+   Firestore document ('atl_orders_<LabId>'), same pattern as
+   inventory. Each order: {id, name, quantity, category,
+   package, status:'pending'|'fulfilled', dateRequested,
+   dateFulfilled}. Marking an order fulfilled also adds it to
+   the lab's live inventory.
+========================================================= */
+let orders = [];
+function ordersKeyFor(labId){ return 'atl_orders_' + labId; }
+
+let unsubscribeOrders = null;
+function stopListeningToOrders(){
+  if(unsubscribeOrders){ unsubscribeOrders(); unsubscribeOrders = null; }
+  orders = [];
+}
+function listenToLabOrders(labId){
+  stopListeningToOrders();
+  unsubscribeOrders = db.collection('atl_data').doc(ordersKeyFor(labId)).onSnapshot(doc=>{
+    orders = doc.exists ? (doc.data().value || []) : [];
+    renderOrderList();
+  }, err=>{
+    console.error("Firestore orders listener failed", err);
+    showToast('Could not load orders');
+  });
+}
+
 let unsubscribeLabs = null;
 function listenToLabs(){
   if(unsubscribeLabs){ unsubscribeLabs(); unsubscribeLabs = null; }
@@ -409,9 +436,11 @@ function deleteLab(labId){
     currentLab = null;
     localStorage.removeItem('selectedLab');
     stopListeningToInventory();
+    stopListeningToOrders();
     renderAllLabSelects();
     renderHomeLabState();
     renderAddInventoryGate();
+    renderOrderGate();
     updateTopbarTitle();
   }
   showToast('Lab deleted');
@@ -456,7 +485,7 @@ function renderSidebarLabSelect(){
   fillLabSelect(document.getElementById('sidebarLabSelect'));
 }
 function renderAllLabSelects(){
-  renderHomeLabSelect();
+  //renderHomeLabSelect();
   renderSidebarLabSelect();
 }
 
@@ -496,9 +525,11 @@ function selectHomeLab(labId){
     currentLab = null;
     localStorage.removeItem('selectedLab');
     stopListeningToInventory();
+    stopListeningToOrders();
     renderAllLabSelects();
     renderHomeLabState();
     renderAddInventoryGate();
+    renderOrderGate();
     updateTopbarTitle();
     return;
   }
@@ -507,9 +538,11 @@ function selectHomeLab(labId){
   currentLab = labId;
   localStorage.setItem('selectedLab', currentLab);
   listenToLabInventory(currentLab);
+  listenToLabOrders(currentLab);
   renderAllLabSelects();
   renderHomeLabState();
   renderAddInventoryGate();
+  renderOrderGate();
   updateTopbarTitle();
   showToast('Switched to ' + lab.schoolName);
 }
@@ -536,7 +569,7 @@ async function init(){
     currentLab = null;
     localStorage.removeItem('selectedLab');
   }
-  if(currentLab){ listenToLabInventory(currentLab); }
+  if(currentLab){ listenToLabInventory(currentLab); listenToLabOrders(currentLab); }
   listenToLabs();
 
   switchTab('home');
@@ -545,8 +578,8 @@ async function init(){
 /* =========================================================
    NAV
 ========================================================= */
-const TAB_TITLES = { home:"Home & Dashboard", add:"Add Inventory", addlab:"Add New Lab", listlabs:"List of ATLs" };
-const ALL_TABS = ['home','add','addlab','listlabs'];
+const TAB_TITLES = { home:"Home & Dashboard", add:"Add Inventory", order:"Order Inventory", addlab:"Add New Lab", listlabs:"List of ATLs" };
+const ALL_TABS = ['home','add','order','addlab','listlabs'];
 let activeTab = 'home';
 function updateTopbarTitle(){
   const lab = currentLab ? labById(currentLab) : null;
@@ -562,6 +595,7 @@ function switchTab(tab){
   updateTopbarTitle();
   if(tab==='home'){ renderAllLabSelects(); renderHomeLabState(); }
   if(tab==='add'){ renderAddInventoryGate(); }
+  if(tab==='order'){ renderOrderGate(); renderOrderList(); }
   if(tab==='listlabs'){ renderLabManageList(); }
   closeSidebar();
   closeAtlLabsMenu();
@@ -616,6 +650,59 @@ function renderPackageGrids(){
 }
 
 /* =========================================================
+   INVENTORY SEARCH (client-side — filters the already-loaded
+   `inventory` array for the current lab; no extra DB reads)
+========================================================= */
+function handleInventorySearch(query){
+  const box = document.getElementById('inventorySearchResults');
+  const q = (query||'').trim().toLowerCase();
+
+  if(!q){
+    box.classList.add('hidden');
+    box.innerHTML = '';
+    return;
+  }
+
+  const matches = inventory.filter(it =>
+    (it.name||'').toLowerCase().includes(q) ||
+    (it.category||'').toLowerCase().includes(q)
+  );
+
+  if(matches.length === 0){
+    box.innerHTML = `<div class="inv-search-empty">No items match "${escapeHTML(query)}"</div>`;
+    box.classList.remove('hidden');
+    return;
+  }
+
+  box.innerHTML = matches.map(it => `
+    <div class="inv-search-row" onclick="jumpToSearchResult('${it.package}')">
+      <div>
+        <div class="name">${escapeHTML(it.name)}</div>
+        <div class="meta">${escapeHTML(it.category)} · Qty ${it.quantity}</div>
+      </div>
+      <span class="row-actions">
+        <button class="order-btn" type="button" data-order-name="${escapeHTML(it.name)}" onclick="event.stopPropagation(); quickOrderFromButton(this)">🛒 Order</button>
+        <span class="pkg-badge">${it.package}</span>
+      </span>
+    </div>`).join('');
+  box.classList.remove('hidden');
+}
+
+function jumpToSearchResult(packageCode){
+  document.getElementById('inventorySearchInput').value = '';
+  document.getElementById('inventorySearchResults').classList.add('hidden');
+  openPackageDetail(packageCode);
+}
+
+// Close the results dropdown when clicking outside it
+document.addEventListener('click', function(e){
+  const wrap = document.querySelector('.inv-search-wrap');
+  if(wrap && !wrap.contains(e.target)){
+    document.getElementById('inventorySearchResults')?.classList.add('hidden');
+  }
+});
+
+/* =========================================================
    DASHBOARD DETAIL
 ========================================================= */
 function showDashboardOverview(){
@@ -653,7 +740,10 @@ function openPackageDetail(code){
     const rows = byCat[cat].map(it=>`
       <div class="cat-item-row">
         <span>${escapeHTML(it.name)}<span class="src">${it.source==='photo'?'· via photo':''}</span></span>
-        <span class="qty">${it.quantity}</span>
+        <span class="qty-order-wrap">
+          <span class="qty">${it.quantity}</span>
+          <button class="order-btn" type="button" data-order-name="${escapeHTML(it.name)}" onclick="quickOrderFromButton(this)">🛒 Order</button>
+        </span>
       </div>`).join('');
     return `<div class="cat-block"><h4>${escapeHTML(cat)}</h4><div class="cat-items">${rows}</div></div>`;
   }).join('');
@@ -778,6 +868,137 @@ async function submitManualItem(){
   setStatus('manualStatus','success', `Added "${name}" (x${qty}) → ${category} (${pkg})`);
   nameEl.value=''; qtyEl.value=1;
   showToast('Item added to inventory');
+}
+
+/* =========================================================
+   ORDER INVENTORY
+========================================================= */
+function renderOrderGate(){
+  const gate = document.getElementById('orderGate');
+  const pane = document.getElementById('orderPane');
+  if(!gate || !pane) return;
+  const hasLab = !!currentLab;
+  gate.classList.toggle('hidden', hasLab);
+  pane.classList.toggle('hidden', !hasLab);
+}
+
+function orderCardHTML(o){
+  const dateLabel = o.status==='fulfilled'
+    ? `Fulfilled ${new Date(o.dateFulfilled).toLocaleDateString()}`
+    : `Requested ${new Date(o.dateRequested).toLocaleDateString()}`;
+  const actions = o.status==='pending'
+    ? `<a class="view" href="javascript:void(0)" onclick="markOrderFulfilled('${o.id}')">Mark Fulfilled</a>
+       <a class="download" href="javascript:void(0)" onclick="cancelOrder('${o.id}')">Cancel</a>`
+    : `<a class="download" href="javascript:void(0)" onclick="cancelOrder('${o.id}')">Remove</a>`;
+  return `
+    <div class="lab-page-card order-card" id="orderRow_${o.id}">
+      <div>
+        <div class="oname">${escapeHTML(o.name)} <span class="order-status ${o.status}">${o.status}</span></div>
+        <div class="ometa">
+          <span>Qty ${o.quantity}</span>
+          <span>· ${escapeHTML(o.category)} (${o.package})</span>
+          <span>· ${dateLabel}</span>
+        </div>
+      </div>
+      <div class="lab-page-actions">${actions}</div>
+    </div>`;
+}
+
+function renderOrderList(){
+  const pendingWrap = document.getElementById('pendingOrdersList');
+  const fulfilledWrap = document.getElementById('fulfilledOrdersList');
+  if(!pendingWrap || !fulfilledWrap) return;
+
+  const pending = orders.filter(o=>o.status==='pending').sort((a,b)=> new Date(b.dateRequested)-new Date(a.dateRequested));
+  const fulfilled = orders.filter(o=>o.status==='fulfilled').sort((a,b)=> new Date(b.dateFulfilled)-new Date(a.dateFulfilled));
+
+  document.getElementById('pendingOrdersCount').textContent = pending.length;
+  document.getElementById('fulfilledOrdersCount').textContent = fulfilled.length;
+
+  pendingWrap.innerHTML = pending.length
+    ? pending.map(orderCardHTML).join('')
+    : `<div class="lab-page-empty">No pending orders — request an item above, or use the "🛒 Order" shortcut on any item in your inventory.</div>`;
+
+  fulfilledWrap.innerHTML = fulfilled.length
+    ? fulfilled.map(orderCardHTML).join('')
+    : `<div class="lab-page-empty">Fulfilled orders will show up here.</div>`;
+}
+
+async function saveOrders(){
+  if(!currentLab) return;
+  await storageSet(ordersKeyFor(currentLab), orders, true);
+}
+
+async function submitOrderItem(){
+  if(!currentLab){ setStatus('orderStatus','error','Select a lab from Home & Dashboard first.'); return; }
+  const nameEl = document.getElementById('orderItemName');
+  const qtyEl = document.getElementById('orderItemQty');
+  const name = nameEl.value.trim();
+  const qty = parseInt(qtyEl.value,10) || 0;
+  if(!name || qty<=0){ setStatus('orderStatus','error','Enter a valid item name and quantity.'); return; }
+
+  setStatus('orderStatus','loading','Categorizing item…');
+
+  let category = MASTER_ITEMS_MAP[name.toLowerCase().trim()] || null;
+  if(!category) category = matchCategoryLocal(name);
+  if(!category){
+    category = await classifyWithAI(name, (n,max)=> setStatus('orderStatus','loading', `AI is busy — retrying (${n}/${max})…`));
+  }
+  const pkg = CATEGORY_TO_PACKAGE[category] || 'P4';
+
+  orders.push({
+    id: 'ord_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+    name, quantity: qty, category, package: pkg, status:'pending', dateRequested: new Date().toISOString()
+  });
+  await saveOrders();
+  renderOrderList();
+  setStatus('orderStatus','success', `Requested "${name}" (x${qty}) → ${category} (${pkg})`);
+  nameEl.value=''; qtyEl.value=1;
+  showToast('Order request added');
+}
+
+async function markOrderFulfilled(orderId){
+  if(!currentLab) return;
+  const o = orders.find(x=>x.id===orderId);
+  if(!o || o.status!=='pending') return;
+  o.status = 'fulfilled';
+  o.dateFulfilled = new Date().toISOString();
+  await saveOrders();
+
+  // Fulfilling an order means the stock arrived — log it into inventory too.
+  inventory.push({
+    id: 'it_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+    name:o.name, quantity:o.quantity, category:o.category, package:o.package,
+    source:'order', dateAdded: new Date().toISOString()
+  });
+  await storageSet(inventoryKeyFor(currentLab), inventory, true);
+
+  renderOrderList();
+  renderPackageGrids();
+  showToast(`"${o.name}" marked fulfilled and added to inventory`);
+}
+
+async function cancelOrder(orderId){
+  if(!currentLab) return;
+  orders = orders.filter(x=>x.id!==orderId);
+  await saveOrders();
+  renderOrderList();
+  showToast('Order removed');
+}
+
+/* Quick "🛒 Order" shortcuts — jump to the Order tab with the
+   item name pre-filled, from a package detail row or a search result. */
+function quickOrder(name){
+  if(!currentLab){ showToast('Select a lab first'); return; }
+  switchTab('order');
+  requestAnimationFrame(()=>{
+    const nameEl = document.getElementById('orderItemName');
+    if(nameEl) nameEl.value = name;
+    document.getElementById('orderItemQty')?.focus();
+  });
+}
+function quickOrderFromButton(btn){
+  quickOrder(btn.dataset.orderName || '');
 }
 
 /* =========================================================
